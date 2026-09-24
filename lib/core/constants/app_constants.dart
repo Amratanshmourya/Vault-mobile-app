@@ -20,6 +20,8 @@ class AppConstants {
   static const String keySecurityEvents = 'vault_security_events';
   static const String keyBackupHistory = 'vault_backup_history';
   static const String keySortOption = 'vault_sort_option';
+  static const String keyVaultDescriptors = 'vault_descriptors_registry';
+  static const String keyActiveVaultId = 'vault_active_vault_id';
 }
 
 enum SortOption {

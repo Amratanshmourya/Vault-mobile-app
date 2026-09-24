@@ -8,6 +8,8 @@ import '../../data/models/backup_diff_result.dart';
 import '../../data/models/folder.dart';
 import '../../data/models/security_event.dart';
 import '../../data/models/vault_item.dart';
+import '../../data/models/vault_descriptor.dart';
+import '../../data/models/smart_collection.dart';
 import '../../data/repositories/vault_repository.dart';
 
 class VaultState extends ChangeNotifier {
@@ -21,6 +23,7 @@ class VaultState extends ChangeNotifier {
   String? _errorMessage;
   String _searchQuery = '';
   VaultItemType? _selectedCategory;
+  SmartCollectionType? _selectedSmartCollection;
   String? _selectedFolder;
   String? _selectedTag;
   bool _filterFavoritesOnly = false;
@@ -35,6 +38,7 @@ class VaultState extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   String get searchQuery => _searchQuery;
   VaultItemType? get selectedCategory => _selectedCategory;
+  SmartCollectionType? get selectedSmartCollection => _selectedSmartCollection;
   String? get selectedFolder => _selectedFolder;
   String? get selectedTag => _selectedTag;
   bool get filterFavoritesOnly => _filterFavoritesOnly;
@@ -48,9 +52,14 @@ class VaultState extends ChangeNotifier {
   List<VaultItem> get trashItems => repository.trashItems;
   List<Folder> get folders => repository.folders;
   List<String> get allTags => repository.allTags;
+  List<VaultDescriptor> get vaults => repository.vaults;
+  VaultDescriptor get activeVault => repository.activeVault;
 
   List<VaultItem> get favoriteItems =>
       repository.activeItems.where((i) => i.isFavorite).toList();
+
+  List<VaultItem> get passkeyItems =>
+      repository.activeItems.where((i) => i.hasPasskey).toList();
 
   List<VaultItem> get recentlyUsedItems {
     final list = repository.activeItems.where((i) => i.lastUsedAt != null).toList();
@@ -65,6 +74,7 @@ class VaultState extends ChangeNotifier {
       typeFilter: _selectedCategory,
       folderFilter: _selectedFolder,
       tagFilter: _selectedTag,
+      smartCollection: _selectedSmartCollection,
       favoriteOnly: _filterFavoritesOnly ? true : null,
       hasTotpOnly: _filterHasTotpOnly ? true : null,
       sortOption: _sortOption,
@@ -72,6 +82,7 @@ class VaultState extends ChangeNotifier {
   }
 
   int get totalCount => repository.activeItems.length;
+  int get passkeysCount => repository.activeItems.where((i) => i.hasPasskey).length;
 
   int countForType(VaultItemType type) =>
       repository.activeItems.where((i) => i.type == type).length;
@@ -104,6 +115,52 @@ class VaultState extends ChangeNotifier {
     }
   }
 
+  // Vault Management (V3 Multi-Vault)
+  Future<void> createVault({
+    required String name,
+    String icon = '🛡️',
+    String colorHex = '#1A80E5',
+    String? description,
+    required SecretKey activeKey,
+  }) async {
+    await _repository.createVault(
+      name: name,
+      icon: icon,
+      colorHex: colorHex,
+      description: description,
+      activeKey: activeKey,
+    );
+    await _securityActivityService.recordEvent(
+      type: SecurityEventType.vaultUnlocked,
+      description: 'Created new vault "$name"',
+    );
+    notifyListeners();
+  }
+
+  Future<void> switchVault(String vaultId, SecretKey activeKey) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      await _repository.switchVault(vaultId, activeKey);
+      clearFilters();
+    } catch (e) {
+      _errorMessage = 'Failed to switch vault: $e';
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> deleteVault(String vaultId, SecretKey activeKey) async {
+    await _repository.deleteVault(vaultId, activeKey);
+    notifyListeners();
+  }
+
+  Future<void> updateVaultDescriptor(VaultDescriptor descriptor) async {
+    await _repository.updateVaultDescriptor(descriptor);
+    notifyListeners();
+  }
+
   void setSearchQuery(String query) {
     _searchQuery = query;
     notifyListeners();
@@ -111,6 +168,13 @@ class VaultState extends ChangeNotifier {
 
   void setCategoryFilter(VaultItemType? type) {
     _selectedCategory = type;
+    _selectedSmartCollection = null;
+    notifyListeners();
+  }
+
+  void setSmartCollection(SmartCollectionType? collection) {
+    _selectedSmartCollection = collection;
+    _selectedCategory = null;
     notifyListeners();
   }
 
@@ -143,6 +207,7 @@ class VaultState extends ChangeNotifier {
   void clearFilters() {
     _searchQuery = '';
     _selectedCategory = null;
+    _selectedSmartCollection = null;
     _selectedFolder = null;
     _selectedTag = null;
     _filterFavoritesOnly = false;
@@ -382,6 +447,7 @@ class VaultState extends ChangeNotifier {
     _repository.lockMemory();
     _searchQuery = '';
     _selectedCategory = null;
+    _selectedSmartCollection = null;
     _selectedFolder = null;
     _selectedTag = null;
     _filterFavoritesOnly = false;

@@ -5,15 +5,35 @@ import 'package:vault/core/services/storage_service.dart';
 import 'package:vault/data/models/vault_item.dart';
 import 'package:vault/data/repositories/vault_repository.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 class FakeStorageService extends StorageService {
   String? _vaultData;
+  String? _vaultDescriptors;
+  String? _activeVaultId;
 
   @override
-  Future<String?> getEncryptedVaultData() async => _vaultData;
+  Future<String?> getEncryptedVaultData([String? vaultId]) async => _vaultData;
 
   @override
-  Future<void> saveEncryptedVaultData(String data) async {
+  Future<void> saveEncryptedVaultData(String data, [String? vaultId]) async {
     _vaultData = data;
+  }
+
+  @override
+  Future<String?> getVaultDescriptorsJson() async => _vaultDescriptors;
+
+  @override
+  Future<void> saveVaultDescriptorsJson(String json) async {
+    _vaultDescriptors = json;
+  }
+
+  @override
+  Future<String> getActiveVaultId() async => _activeVaultId ?? 'default_vault';
+
+  @override
+  Future<void> setActiveVaultId(String id) async {
+    _activeVaultId = id;
   }
 
   @override
@@ -24,11 +44,14 @@ class FakeStorageService extends StorageService {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('V2 Tags, Search, Sorting, and Bulk Actions Tests', () {
     late VaultRepository repo;
     late SecretKey activeKey;
 
     setUp(() async {
+      SharedPreferences.setMockInitialValues({});
       repo = VaultRepository(storageService: FakeStorageService());
       activeKey = SecretKey([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]);
       await repo.loadVault(activeKey);

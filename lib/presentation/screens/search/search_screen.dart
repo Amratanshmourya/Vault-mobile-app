@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../data/models/vault_item.dart';
+import '../../../data/models/smart_collection.dart';
 import '../../state/auth_state.dart';
 import '../../state/vault_state.dart';
 import '../../widgets/common/empty_state.dart';
@@ -267,6 +268,7 @@ class _SearchScreenState extends State<SearchScreen> {
                     context,
                     label: 'All',
                     isSelected: vaultState.selectedCategory == null &&
+                        vaultState.selectedSmartCollection == null &&
                         !vaultState.filterFavoritesOnly &&
                         !vaultState.filterHasTotpOnly &&
                         vaultState.selectedTag == null,
@@ -274,8 +276,20 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                   _buildFilterChip(
                     context,
+                    label: '🛡️ Passkeys (${vaultState.passkeysCount})',
+                    isSelected: vaultState.selectedSmartCollection == SmartCollectionType.passkeys ||
+                        vaultState.selectedCategory == VaultItemType.passkey,
+                    onTap: () => vaultState.setSmartCollection(
+                      vaultState.selectedSmartCollection == SmartCollectionType.passkeys
+                          ? null
+                          : SmartCollectionType.passkeys,
+                    ),
+                  ),
+                  _buildFilterChip(
+                    context,
                     label: '⭐ Favorites',
-                    isSelected: vaultState.filterFavoritesOnly,
+                    isSelected: vaultState.filterFavoritesOnly ||
+                        vaultState.selectedSmartCollection == SmartCollectionType.favorites,
                     onTap: () => vaultState.toggleFavoritesFilter(),
                   ),
                   _buildFilterChip(

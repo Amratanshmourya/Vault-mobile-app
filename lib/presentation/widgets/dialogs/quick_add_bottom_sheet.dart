@@ -132,6 +132,13 @@ class QuickAddBottomSheet extends StatelessWidget {
             ),
             _buildItemOption(
               context,
+              type: VaultItemType.passkey,
+              title: 'Passkey Credential',
+              subtitle: 'FIDO2 / WebAuthn passwordless credential',
+              color: Colors.deepPurpleAccent,
+            ),
+            _buildItemOption(
+              context,
               type: VaultItemType.password,
               title: 'Standalone Password',
               subtitle: 'PINs, Wi-Fi keys, passcodes',

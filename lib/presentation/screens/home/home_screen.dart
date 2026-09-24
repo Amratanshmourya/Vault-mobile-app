@@ -3,12 +3,14 @@ import 'package:provider/provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../data/models/vault_item.dart';
+import '../../../data/models/smart_collection.dart';
 import '../../state/auth_state.dart';
 import '../../state/vault_state.dart';
 import '../../widgets/common/empty_state.dart';
 import '../../widgets/common/vault_card.dart';
 import '../../widgets/common/vault_item_tile.dart';
 import '../../widgets/dialogs/quick_add_bottom_sheet.dart';
+import '../../widgets/dialogs/vault_switcher_bottom_sheet.dart';
 import '../item_detail/item_detail_screen.dart';
 import '../item_editor/item_editor_screen.dart';
 
@@ -143,12 +145,13 @@ class HomeScreen extends StatelessWidget {
     final totalItems = vaultState.totalCount;
     final favorites = vaultState.favoriteItems;
     final recents = vaultState.recentlyUsedItems;
+    final activeVault = vaultState.activeVault;
 
     return Scaffold(
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
-            // Top App Bar
+            // Top App Bar & Multi-Vault Switcher
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
@@ -165,26 +168,35 @@ class HomeScreen extends StatelessWidget {
                             fontSize: 22,
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: const BoxDecoration(
-                                color: AppColors.success,
-                                shape: BoxShape.circle,
-                              ),
+                        const SizedBox(height: 6),
+                        InkWell(
+                          onTap: () => VaultSwitcherBottomSheet.show(context),
+                          borderRadius: BorderRadius.circular(20),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primary.withAlpha(20),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: theme.colorScheme.primary.withAlpha(50)),
                             ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Your Vault • $totalItems ${totalItems == 1 ? 'item' : 'items'}',
-                              style: AppTypography.bodySmall.copyWith(
-                                color: theme.colorScheme.onSurface.withAlpha(160),
-                                fontWeight: FontWeight.w500,
-                              ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(activeVault.icon, style: const TextStyle(fontSize: 13)),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '${activeVault.name} ($totalItems)',
+                                  style: AppTypography.bodySmall.copyWith(
+                                    color: theme.colorScheme.primary,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: theme.colorScheme.primary),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
                       ],
                     ),
@@ -201,7 +213,7 @@ class HomeScreen extends StatelessWidget {
             // Search Trigger Bar
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
                 child: VaultCard(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   onTap: () => onNavigateTab(1), // Switch to Search tab
@@ -225,13 +237,70 @@ class HomeScreen extends StatelessWidget {
               ),
             ),
 
+            // Smart Collections Quick Filters
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 38,
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    ActionChip(
+                      avatar: const Text('🛡️', style: TextStyle(fontSize: 13)),
+                      label: Text('Passkeys (${vaultState.passkeysCount})'),
+                      onPressed: () {
+                        vaultState.setSmartCollection(SmartCollectionType.passkeys);
+                        onNavigateTab(1);
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    ActionChip(
+                      avatar: const Text('⭐', style: TextStyle(fontSize: 13)),
+                      label: Text('Favorites (${favorites.length})'),
+                      onPressed: () {
+                        vaultState.setSmartCollection(SmartCollectionType.favorites);
+                        onNavigateTab(1);
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    ActionChip(
+                      avatar: const Text('📎', style: TextStyle(fontSize: 13)),
+                      label: const Text('Files'),
+                      onPressed: () {
+                        vaultState.setSmartCollection(SmartCollectionType.files);
+                        onNavigateTab(1);
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    ActionChip(
+                      avatar: const Text('⚠️', style: TextStyle(fontSize: 13)),
+                      label: const Text('Weak/Reused'),
+                      onPressed: () {
+                        vaultState.setSmartCollection(SmartCollectionType.weak);
+                        onNavigateTab(1);
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    ActionChip(
+                      avatar: const Text('🔐', style: TextStyle(fontSize: 13)),
+                      label: const Text('Missing 2FA'),
+                      onPressed: () {
+                        vaultState.setSmartCollection(SmartCollectionType.missing2FA);
+                        onNavigateTab(1);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
             if (totalItems == 0) ...[
               SliverFillRemaining(
                 hasScrollBody: false,
                 child: EmptyState(
                   icon: '🔐',
                   title: 'Your Vault is Ready',
-                  description: 'Add your first login, password, card, or secure note to protect it offline.',
+                  description: 'Add your first login, passkey, card, or secure note to protect it offline.',
                   actionLabel: 'Add Item',
                   onAction: () => _createNewItem(context),
                 ),
@@ -241,7 +310,7 @@ class HomeScreen extends StatelessWidget {
               if (favorites.isNotEmpty) ...[
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
                     child: Text(
                       'Favorites',
                       style: AppTypography.titleSmall.copyWith(
@@ -372,6 +441,12 @@ class HomeScreen extends StatelessWidget {
                         type: VaultItemType.login,
                         count: vaultState.countForType(VaultItemType.login),
                         color: AppColors.categoryLogin,
+                      ),
+                      _buildCategoryRow(
+                        context,
+                        type: VaultItemType.passkey,
+                        count: vaultState.countForType(VaultItemType.passkey),
+                        color: Colors.deepPurpleAccent,
                       ),
                       _buildCategoryRow(
                         context,

@@ -17,8 +17,10 @@ import '../../widgets/common/custom_text_field.dart';
 import '../../widgets/common/vault_card.dart';
 import '../../widgets/dialogs/backup_password_dialog.dart';
 import '../../widgets/dialogs/confirm_action_dialog.dart';
+import '../../widgets/dialogs/vault_switcher_bottom_sheet.dart';
 import '../security_dashboard/security_activity_screen.dart';
 import '../trash/trash_screen.dart';
+import 'vault_maintenance_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -666,6 +668,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
               padding: EdgeInsets.zero,
               child: Column(
                 children: [
+                  ListTile(
+                    leading: const Icon(Icons.shield_outlined, color: AppColors.primary),
+                    title: const Text('Manage Multiple Vaults'),
+                    subtitle: Text('${vaultState.vaults.length} vaults configured • Active: ${vaultState.activeVault.name}'),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => VaultSwitcherBottomSheet.show(context),
+                  ),
+                  const Divider(),
+                  ListTile(
+                    leading: const Icon(Icons.pie_chart_outline_rounded, color: Colors.teal),
+                    title: const Text('Vault Maintenance & Storage'),
+                    subtitle: const Text('Integrity diagnostics, storage breakdown & Emergency Kit'),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const VaultMaintenanceScreen()),
+                      );
+                    },
+                  ),
+                  const Divider(),
                   ListTile(
                     leading: const Icon(Icons.delete_outline_rounded),
                     title: const Text('Trash'),

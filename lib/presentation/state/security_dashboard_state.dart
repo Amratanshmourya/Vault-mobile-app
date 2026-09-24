@@ -8,6 +8,7 @@ enum SecurityFilterType {
   reused,
   old,
   missing2fa,
+  passkeyOpportunities,
 }
 
 class SecurityDashboardState extends ChangeNotifier {

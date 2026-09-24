@@ -1,9 +1,11 @@
 import 'package:uuid/uuid.dart';
 import '../../core/crypto/password_strength.dart';
 import 'encrypted_file_attachment.dart';
+import 'passkey_credential.dart';
 
 enum VaultItemType {
   login('Login', '🔑'),
+  passkey('Passkey', '🛡️'),
   password('Password', '🔐'),
   card('Card', '💳'),
   identity('Identity', '🪪'),
@@ -17,28 +19,87 @@ enum VaultItemType {
   const VaultItemType(this.label, this.icon);
 }
 
+enum CustomFieldType {
+  text('Text', '🔤'),
+  secret('Concealed / Secret', '🔒'),
+  url('Website / URL', '🌐'),
+  email('Email Address', '✉️'),
+  username('Username', '👤'),
+  password('Password', '🔑'),
+  number('Number', '🔢'),
+  date('Date', '📅'),
+  multiline('Multi-line Note', '📄'),
+  boolean('Toggle (Yes/No)', '🔘');
+
+  final String label;
+  final String icon;
+  const CustomFieldType(this.label, this.icon);
+
+  static CustomFieldType fromString(String? val) {
+    if (val == null) return CustomFieldType.text;
+    return CustomFieldType.values.firstWhere(
+      (e) => e.name.toLowerCase() == val.toLowerCase(),
+      orElse: () => CustomFieldType.text,
+    );
+  }
+}
+
 class CustomField {
+  final String id;
   final String label;
   final String value;
+  final CustomFieldType type;
   final bool isConcealed;
 
   CustomField({
+    String? id,
     required this.label,
     required this.value,
-    this.isConcealed = false,
-  });
+    CustomFieldType? type,
+    bool? isConcealed,
+  })  : id = id ?? const Uuid().v4(),
+        type = type ?? (isConcealed == true ? CustomFieldType.secret : CustomFieldType.text),
+        isConcealed = isConcealed ?? (type == CustomFieldType.secret || type == CustomFieldType.password);
+
+  CustomField copyWith({
+    String? id,
+    String? label,
+    String? value,
+    CustomFieldType? type,
+    bool? isConcealed,
+  }) {
+    return CustomField(
+      id: id ?? this.id,
+      label: label ?? this.label,
+      value: value ?? this.value,
+      type: type ?? this.type,
+      isConcealed: isConcealed ?? this.isConcealed,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
+    'id': id,
     'label': label,
     'value': value,
+    'type': type.name,
     'isConcealed': isConcealed,
   };
 
-  factory CustomField.fromJson(Map<String, dynamic> json) => CustomField(
-    label: json['label'] as String? ?? '',
-    value: json['value'] as String? ?? '',
-    isConcealed: json['isConcealed'] as bool? ?? false,
-  );
+  factory CustomField.fromJson(Map<String, dynamic> json) {
+    final typeStr = json['type'] as String?;
+    final concealed = json['isConcealed'] as bool? ?? false;
+    final type = typeStr != null
+        ? CustomFieldType.fromString(typeStr)
+        : (concealed ? CustomFieldType.secret : CustomFieldType.text);
+
+    return CustomField(
+      id: json['id'] as String?,
+      label: json['label'] as String? ?? '',
+      value: json['value'] as String? ?? '',
+      type: type,
+      isConcealed: concealed || type == CustomFieldType.secret || type == CustomFieldType.password,
+    );
+  }
 }
 
 class PasswordHistoryEntry {
@@ -108,6 +169,9 @@ class VaultItem {
   final DateTime? passwordUpdatedAt;
   final List<PasswordHistoryEntry> passwordHistory;
 
+  // Passkey fields (V3)
+  final PasskeyCredential? passkey;
+
   // Payment Card fields
   final String? cardholderName;
   final String? cardNumber;
@@ -161,6 +225,7 @@ class VaultItem {
     this.totpSecret,
     this.passwordUpdatedAt,
     this.passwordHistory = const [],
+    this.passkey,
     this.cardholderName,
     this.cardNumber,
     this.expiryMonth,
@@ -190,9 +255,10 @@ class VaultItem {
 
   /// Normalized domain extracted from website URL for strict matching
   String? get normalizedDomain {
-    if (website == null || website!.trim().isEmpty) return null;
+    final targetUrl = website ?? passkey?.rpId;
+    if (targetUrl == null || targetUrl.trim().isEmpty) return null;
     try {
-      String url = website!.trim();
+      String url = targetUrl.trim();
       if (!url.startsWith('http://') && !url.startsWith('https://')) {
         url = 'https://$url';
       }
@@ -206,6 +272,9 @@ class VaultItem {
 
   /// Password strength evaluation result
   PasswordStrengthResult get passwordStrength => PasswordStrength.evaluate(password ?? '');
+
+  /// Checks if this item has an active passkey or is a standalone passkey
+  bool get hasPasskey => type == VaultItemType.passkey || passkey != null;
 
   VaultItem copyWith({
     String? id,
@@ -221,6 +290,7 @@ class VaultItem {
     String? totpSecret,
     DateTime? passwordUpdatedAt,
     List<PasswordHistoryEntry>? passwordHistory,
+    PasskeyCredential? passkey,
     String? cardholderName,
     String? cardNumber,
     String? expiryMonth,
@@ -259,6 +329,7 @@ class VaultItem {
       totpSecret: totpSecret ?? this.totpSecret,
       passwordUpdatedAt: passwordUpdatedAt ?? this.passwordUpdatedAt,
       passwordHistory: passwordHistory ?? this.passwordHistory,
+      passkey: passkey ?? this.passkey,
       cardholderName: cardholderName ?? this.cardholderName,
       cardNumber: cardNumber ?? this.cardNumber,
       expiryMonth: expiryMonth ?? this.expiryMonth,
@@ -299,6 +370,7 @@ class VaultItem {
     'totpSecret': totpSecret,
     'passwordUpdatedAt': passwordUpdatedAt?.toIso8601String(),
     'passwordHistory': passwordHistory.map((e) => e.toJson()).toList(),
+    'passkey': passkey?.toJson(),
     'cardholderName': cardholderName,
     'cardNumber': cardNumber,
     'expiryMonth': expiryMonth,
@@ -346,6 +418,9 @@ class VaultItem {
             ?.map((e) => PasswordHistoryEntry.fromJson(e as Map<String, dynamic>))
             .toList() ??
         [],
+    passkey: json['passkey'] != null
+        ? PasskeyCredential.fromJson(json['passkey'] as Map<String, dynamic>)
+        : null,
     cardholderName: json['cardholderName'] as String?,
     cardNumber: json['cardNumber'] as String?,
     expiryMonth: json['expiryMonth'] as String?,

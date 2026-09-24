@@ -11,7 +11,6 @@ import '../../widgets/common/vault_card.dart';
 import '../../widgets/common/vault_item_tile.dart';
 import '../item_detail/item_detail_screen.dart';
 import '../item_editor/item_editor_screen.dart';
-
 import 'security_activity_screen.dart';
 
 class SecurityDashboardScreen extends StatefulWidget {
@@ -129,6 +128,8 @@ class _SecurityDashboardScreenState extends State<SecurityDashboardScreen> {
       displayedItems = audit.oldItems;
     } else if (filter == SecurityFilterType.missing2fa) {
       displayedItems = audit.missing2faItems;
+    } else if (filter == SecurityFilterType.passkeyOpportunities) {
+      displayedItems = audit.passkeyOpportunities.map((o) => o.item).toList();
     } else {
       // All issues combined
       final Set<String> issueIds = {
@@ -141,7 +142,7 @@ class _SecurityDashboardScreenState extends State<SecurityDashboardScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Security Dashboard'),
+        title: const Text('Security Dashboard & Audit'),
         actions: [
           IconButton(
             icon: const Icon(Icons.history_edu_rounded),
@@ -196,7 +197,7 @@ class _SecurityDashboardScreenState extends State<SecurityDashboardScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Evaluated offline across ${audit.totalScanned} items for weak, reused, or outdated credentials.',
+                          'Zero-knowledge evaluation across ${audit.totalScanned} items for weak, reused, or unhardened credentials.',
                           style: AppTypography.bodySmall.copyWith(
                             color: theme.colorScheme.onSurface.withAlpha(160),
                           ),
@@ -208,6 +209,49 @@ class _SecurityDashboardScreenState extends State<SecurityDashboardScreen> {
               ),
             ),
             const SizedBox(height: 16),
+
+            // Passkey Opportunities Alert Card
+            if (audit.passkeyOpportunities.isNotEmpty) ...[
+              VaultCard(
+                padding: const EdgeInsets.all(16),
+                color: Colors.deepPurpleAccent.withAlpha(15),
+                border: BorderSide(color: Colors.deepPurpleAccent.withAlpha(50)),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.deepPurpleAccent.withAlpha(25),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text('🛡️', style: TextStyle(fontSize: 22)),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${audit.passkeyOpportunities.length} Passkey Upgrades Available',
+                            style: AppTypography.titleSmall.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Upgrade logins on ${audit.passkeyOpportunities.take(2).map((o) => o.serviceName).join(", ")} to phishing-resistant passkeys.',
+                            style: AppTypography.bodySmall.copyWith(color: theme.colorScheme.onSurface.withAlpha(150)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => dashboardState.setFilter(SecurityFilterType.passkeyOpportunities),
+                      child: const Text('View'),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
 
             // Metrics Grid (Weak, Reused, Old, Missing 2FA)
             Row(
@@ -226,7 +270,7 @@ class _SecurityDashboardScreenState extends State<SecurityDashboardScreen> {
                 const SizedBox(width: 10),
                 _buildMetricCard(
                   context,
-                  title: 'Reused',
+                  title: 'Reused (ZK)',
                   count: audit.reusedGroups.fold<int>(0, (prev, g) => prev + g.items.length),
                   icon: Icons.repeat_rounded,
                   color: AppColors.warning,
@@ -242,7 +286,7 @@ class _SecurityDashboardScreenState extends State<SecurityDashboardScreen> {
               children: [
                 _buildMetricCard(
                   context,
-                  title: 'Old (>90d)',
+                  title: 'Old (>180d)',
                   count: audit.oldItems.length,
                   icon: Icons.history_rounded,
                   color: AppColors.info,
@@ -280,7 +324,9 @@ class _SecurityDashboardScreenState extends State<SecurityDashboardScreen> {
                               ? 'Outdated Passwords (${audit.oldItems.length})'
                               : filter == SecurityFilterType.missing2fa
                                   ? 'Logins without 2FA (${audit.missing2faItems.length})'
-                                  : 'Items Requiring Review (${displayedItems.length})',
+                                  : filter == SecurityFilterType.passkeyOpportunities
+                                      ? 'Passkey Candidates (${audit.passkeyOpportunities.length})'
+                                      : 'Items Requiring Review (${displayedItems.length})',
                   style: AppTypography.titleSmall.copyWith(
                     color: theme.colorScheme.onSurface.withAlpha(180),
                   ),
@@ -295,7 +341,7 @@ class _SecurityDashboardScreenState extends State<SecurityDashboardScreen> {
             const SizedBox(height: 8),
 
             if (displayedItems.isEmpty) ...[
-              EmptyState(
+              const EmptyState(
                 icon: '🛡️',
                 title: 'No Issues Found',
                 description: 'All your scanned vault items meet healthy security standards.',

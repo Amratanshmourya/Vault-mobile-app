@@ -17,6 +17,8 @@ class CategoryBadge extends StatelessWidget {
     switch (type) {
       case VaultItemType.login:
         return AppColors.categoryLogin;
+      case VaultItemType.passkey:
+        return Colors.deepPurpleAccent;
       case VaultItemType.password:
         return AppColors.categoryPassword;
       case VaultItemType.card:

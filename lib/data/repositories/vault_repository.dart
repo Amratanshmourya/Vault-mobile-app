@@ -5,6 +5,9 @@ import '../../core/crypto/aes_gcm_service.dart';
 import '../../core/services/storage_service.dart';
 import '../models/folder.dart';
 import '../models/vault_item.dart';
+import '../models/vault_descriptor.dart';
+import '../models/smart_collection.dart';
+import '../models/security_audit_result.dart';
 
 class VaultRepository {
   final StorageService storageService;
@@ -13,11 +16,23 @@ class VaultRepository {
 
   List<VaultItem> _items = [];
   List<Folder> _folders = [];
+  List<VaultDescriptor> _vaults = [];
+  String _activeVaultId = 'default_vault';
 
   List<VaultItem> get items => List.unmodifiable(_items);
   List<VaultItem> get activeItems => List.unmodifiable(_items.where((i) => !i.isDeleted));
   List<VaultItem> get trashItems => List.unmodifiable(_items.where((i) => i.isDeleted));
   List<Folder> get folders => List.unmodifiable(_folders);
+  List<VaultDescriptor> get vaults => List.unmodifiable(_vaults);
+  
+  VaultDescriptor get activeVault {
+    return _vaults.firstWhere(
+      (v) => v.id == _activeVaultId,
+      orElse: () => _vaults.isNotEmpty ? _vaults.first : VaultDescriptor.createDefault(),
+    );
+  }
+
+  String get activeVaultId => _activeVaultId;
 
   /// All unique tags currently in active items (sorted alphabetically)
   List<String> get allTags {
@@ -31,9 +46,40 @@ class VaultRepository {
 
   VaultRepository({required this.storageService});
 
+  /// Initializes the multi-vault registry from storage or creates default
+  Future<void> _ensureVaultRegistry() async {
+    final rawRegistry = await _storageService.getVaultDescriptorsJson();
+    if (rawRegistry != null && rawRegistry.isNotEmpty) {
+      try {
+        final list = (jsonDecode(rawRegistry) as List<dynamic>)
+            .map((e) => VaultDescriptor.fromJson(e as Map<String, dynamic>))
+            .toList();
+        if (list.isNotEmpty) {
+          _vaults = list;
+          _activeVaultId = await _storageService.getActiveVaultId();
+          return;
+        }
+      } catch (_) {}
+    }
+
+    // Default first-time vault setup
+    final defaultVault = VaultDescriptor.createDefault();
+    _vaults = [defaultVault];
+    _activeVaultId = defaultVault.id;
+    await _saveVaultRegistry();
+    await _storageService.setActiveVaultId(_activeVaultId);
+  }
+
+  Future<void> _saveVaultRegistry() async {
+    final jsonStr = jsonEncode(_vaults.map((e) => e.toJson()).toList());
+    await _storageService.saveVaultDescriptorsJson(jsonStr);
+  }
+
   /// Loads and decrypts vault data using the active vault secret key
   Future<void> loadVault(SecretKey activeKey) async {
-    final encryptedData = await storageService.getEncryptedVaultData();
+    await _ensureVaultRegistry();
+
+    final encryptedData = await storageService.getEncryptedVaultData(_activeVaultId);
     if (encryptedData == null || encryptedData.isEmpty) {
       _items = [];
       _folders = [
@@ -61,6 +107,7 @@ class VaultRepository {
 
       // Clean up expired trash items automatically
       await cleanupExpiredTrash(activeKey);
+      _updateActiveVaultItemCount();
     } catch (e) {
       throw Exception('Failed to unlock and decrypt vault: $e');
     }
@@ -78,7 +125,72 @@ class VaultRepository {
       secretKey: activeKey,
     );
 
-    await _storageService.saveEncryptedVaultData(encryptedPayload.serialize());
+    await _storageService.saveEncryptedVaultData(encryptedPayload.serialize(), _activeVaultId);
+    _updateActiveVaultItemCount();
+    await _saveVaultRegistry();
+  }
+
+  void _updateActiveVaultItemCount() {
+    final index = _vaults.indexWhere((v) => v.id == _activeVaultId);
+    if (index != -1) {
+      _vaults[index] = _vaults[index].copyWith(
+        itemCount: activeItems.length,
+        updatedAt: DateTime.now(),
+      );
+    }
+  }
+
+  // Multi-Vault Management
+  Future<VaultDescriptor> createVault({
+    required String name,
+    String icon = '🛡️',
+    String colorHex = '#1A80E5',
+    String? description,
+    required SecretKey activeKey,
+  }) async {
+    final newVault = VaultDescriptor.create(
+      name: name,
+      icon: icon,
+      colorHex: colorHex,
+      description: description,
+    );
+    _vaults.add(newVault);
+    await _saveVaultRegistry();
+    return newVault;
+  }
+
+  Future<void> switchVault(String vaultId, SecretKey activeKey) async {
+    if (_activeVaultId == vaultId) return;
+    final exists = _vaults.any((v) => v.id == vaultId);
+    if (!exists) throw Exception('Vault not found: $vaultId');
+
+    _activeVaultId = vaultId;
+    await _storageService.setActiveVaultId(vaultId);
+    await loadVault(activeKey);
+  }
+
+  Future<void> updateVaultDescriptor(VaultDescriptor descriptor) async {
+    final index = _vaults.indexWhere((v) => v.id == descriptor.id);
+    if (index != -1) {
+      _vaults[index] = descriptor.copyWith(updatedAt: DateTime.now());
+      await _saveVaultRegistry();
+    }
+  }
+
+  Future<void> deleteVault(String vaultId, SecretKey activeKey) async {
+    if (vaultId == 'default_vault') {
+      throw Exception('Cannot delete the primary default vault.');
+    }
+    _vaults.removeWhere((v) => v.id == vaultId);
+    await _storageService.deleteVaultData(vaultId);
+
+    if (_activeVaultId == vaultId) {
+      _activeVaultId = 'default_vault';
+      await _storageService.setActiveVaultId(_activeVaultId);
+      await loadVault(activeKey);
+    } else {
+      await _saveVaultRegistry();
+    }
   }
 
   // CRUD Operations
@@ -263,7 +375,7 @@ class VaultRepository {
     await saveVault(activeKey);
   }
 
-  // Replace Entire Vault (e.g. from restored backup) - Atomic non-destructive replace
+  // Replace Entire Vault (e.g. from restored backup)
   Future<void> replaceAll({
     required List<VaultItem> newItems,
     required List<Folder> newFolders,
@@ -279,9 +391,11 @@ class VaultRepository {
       secretKey: activeKey,
     );
 
-    await _storageService.saveEncryptedVaultData(encryptedPayload.serialize());
+    await _storageService.saveEncryptedVaultData(encryptedPayload.serialize(), _activeVaultId);
     _items = List.from(newItems);
     _folders = List.from(newFolders);
+    _updateActiveVaultItemCount();
+    await _saveVaultRegistry();
   }
 
   // Folders
@@ -295,18 +409,55 @@ class VaultRepository {
     await saveVault(activeKey);
   }
 
+  // Smart Collections
+  List<VaultItem> getSmartCollection(SmartCollectionType type) {
+    switch (type) {
+      case SmartCollectionType.all:
+        return activeItems;
+      case SmartCollectionType.passkeys:
+        return activeItems.where((i) => i.hasPasskey).toList();
+      case SmartCollectionType.favorites:
+        return activeItems.where((i) => i.isFavorite).toList();
+      case SmartCollectionType.weak:
+        return activeItems.where((i) => i.password != null && i.password!.isNotEmpty && i.passwordStrength.score < 60).toList();
+      case SmartCollectionType.reused:
+        final audit = SecurityAuditResult.analyze(activeItems);
+        final reusedIds = audit.reusedGroups.expand((g) => g.items.map((i) => i.id)).toSet();
+        return activeItems.where((i) => reusedIds.contains(i.id)).toList();
+      case SmartCollectionType.old:
+        final now = DateTime.now();
+        return activeItems.where((i) {
+          final dt = i.passwordUpdatedAt ?? i.updatedAt;
+          return i.password != null && i.password!.isNotEmpty && now.difference(dt).inDays > 180;
+        }).toList();
+      case SmartCollectionType.missing2FA:
+        return activeItems.where((i) => i.type == VaultItemType.login && (i.totpSecret == null || i.totpSecret!.trim().isEmpty)).toList();
+      case SmartCollectionType.files:
+        return activeItems.where((i) => i.attachments.isNotEmpty || i.type == VaultItemType.file).toList();
+      case SmartCollectionType.trash:
+        return trashItems;
+    }
+  }
+
   // In-Memory Search & Sorting
   List<VaultItem> search({
     required String query,
     VaultItemType? typeFilter,
     String? folderFilter,
     String? tagFilter,
+    SmartCollectionType? smartCollection,
     bool? favoriteOnly,
     bool? hasTotpOnly,
     SortOption sortOption = SortOption.nameAsc,
   }) {
     final q = query.trim().toLowerCase();
-    final results = activeItems.where((item) {
+    Iterable<VaultItem> sourceList = activeItems;
+
+    if (smartCollection != null) {
+      sourceList = getSmartCollection(smartCollection);
+    }
+
+    final results = sourceList.where((item) {
       if (typeFilter != null && item.type != typeFilter) return false;
       if (folderFilter != null && item.folder != folderFilter) return false;
       if (tagFilter != null && tagFilter.isNotEmpty && !item.tags.contains(tagFilter)) return false;
@@ -321,11 +472,14 @@ class VaultRepository {
       final folderMatch = item.folder?.toLowerCase().contains(q) ?? false;
       final notesMatch = item.notes?.toLowerCase().contains(q) ?? false;
       final tagsMatch = item.tags.any((t) => t.toLowerCase().contains(q));
+      final passkeyMatch = item.passkey?.rpName.toLowerCase().contains(q) == true ||
+          item.passkey?.rpId.toLowerCase().contains(q) == true ||
+          item.passkey?.userName.toLowerCase().contains(q) == true;
       final customMatch = item.customFields.any(
         (cf) => cf.label.toLowerCase().contains(q) || (!cf.isConcealed && cf.value.toLowerCase().contains(q)),
       );
 
-      return titleMatch || userMatch || websiteMatch || folderMatch || notesMatch || tagsMatch || customMatch;
+      return titleMatch || userMatch || websiteMatch || folderMatch || notesMatch || tagsMatch || passkeyMatch || customMatch;
     }).toList();
 
     // Apply sorting

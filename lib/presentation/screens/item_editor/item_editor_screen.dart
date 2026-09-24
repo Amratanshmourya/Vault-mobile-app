@@ -9,6 +9,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../data/models/encrypted_file_attachment.dart';
 import '../../../data/models/vault_item.dart';
+import '../../../data/models/passkey_credential.dart';
 import '../../state/auth_state.dart';
 import '../../state/vault_state.dart';
 import '../../widgets/common/custom_text_field.dart';
@@ -44,6 +45,14 @@ class _ItemEditorScreenState extends State<ItemEditorScreen> {
   late final TextEditingController _passwordController;
   late final TextEditingController _websiteController;
   late final TextEditingController _totpSecretController;
+
+  // Passkey fields (V3)
+  late final TextEditingController _rpIdController;
+  late final TextEditingController _rpNameController;
+  late final TextEditingController _passkeyUserHandleController;
+  late final TextEditingController _passkeyCredentialIdController;
+  PasskeyAlgorithm _passkeyAlg = PasskeyAlgorithm.es256;
+  AuthenticatorAttachment _passkeyAttachment = AuthenticatorAttachment.platform;
 
   // Card
   late final TextEditingController _cardholderController;
@@ -106,6 +115,15 @@ class _ItemEditorScreenState extends State<ItemEditorScreen> {
     _websiteController = TextEditingController(text: item?.website ?? '');
     _totpSecretController = TextEditingController(text: item?.totpSecret ?? '');
 
+    // Passkey initialization
+    final pk = item?.passkey;
+    _rpIdController = TextEditingController(text: pk?.rpId ?? (item?.normalizedDomain ?? ''));
+    _rpNameController = TextEditingController(text: pk?.rpName ?? (item?.title ?? ''));
+    _passkeyUserHandleController = TextEditingController(text: pk?.userHandle ?? '');
+    _passkeyCredentialIdController = TextEditingController(text: pk?.credentialId ?? '');
+    _passkeyAlg = pk?.algorithm ?? PasskeyAlgorithm.es256;
+    _passkeyAttachment = pk?.authenticatorAttachment ?? AuthenticatorAttachment.platform;
+
     _cardholderController = TextEditingController(text: item?.cardholderName ?? '');
     _cardNumberController = TextEditingController(text: item?.cardNumber ?? '');
     _expiryMonthController = TextEditingController(text: item?.expiryMonth ?? '');
@@ -147,6 +165,10 @@ class _ItemEditorScreenState extends State<ItemEditorScreen> {
     _passwordController.dispose();
     _websiteController.dispose();
     _totpSecretController.dispose();
+    _rpIdController.dispose();
+    _rpNameController.dispose();
+    _passkeyUserHandleController.dispose();
+    _passkeyCredentialIdController.dispose();
     _cardholderController.dispose();
     _cardNumberController.dispose();
     _expiryMonthController.dispose();
@@ -167,7 +189,7 @@ class _ItemEditorScreenState extends State<ItemEditorScreen> {
 
   void _generatePassword() {
     final generated = PasswordGenerator.generatePassword(
-      const PasswordGeneratorOptions(length: 18),
+      const PasswordGeneratorOptions(length: 20),
     );
     _passwordController.text = generated;
     setState(() {
@@ -309,41 +331,93 @@ class _ItemEditorScreenState extends State<ItemEditorScreen> {
       builder: (ctx) {
         final labelCtrl = TextEditingController();
         final valCtrl = TextEditingController();
-        bool isConcealed = false;
+        CustomFieldType selectedType = CustomFieldType.text;
+        bool boolVal = false;
 
         return StatefulBuilder(
           builder: (context, setDlgState) => AlertDialog(
-            title: const Text('Add Custom Field'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CustomTextField(controller: labelCtrl, label: 'Field Name', hintText: 'e.g. Security Answer'),
-                const SizedBox(height: 12),
-                CustomTextField(controller: valCtrl, label: 'Value', hintText: 'Field content'),
-                const SizedBox(height: 8),
-                CheckboxListTile(
-                  title: const Text('Conceal value (Sensitive)'),
-                  value: isConcealed,
-                  onChanged: (val) => setDlgState(() => isConcealed = val ?? false),
-                ),
-              ],
+            title: const Text('Add Custom Field 2.0'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DropdownButtonFormField<CustomFieldType>(
+                    initialValue: selectedType,
+                    decoration: const InputDecoration(labelText: 'Field Type'),
+                    items: CustomFieldType.values.map((t) {
+                      return DropdownMenuItem(
+                        value: t,
+                        child: Row(
+                          children: [
+                            Text(t.icon),
+                            const SizedBox(width: 8),
+                            Text(t.label),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setDlgState(() => selectedType = val);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  CustomTextField(
+                    controller: labelCtrl,
+                    label: 'Field Label',
+                    hintText: 'e.g. Pin Code, Security Question, API Secret',
+                  ),
+                  const SizedBox(height: 12),
+                  if (selectedType == CustomFieldType.boolean) ...[
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Enabled / True'),
+                      value: boolVal,
+                      onChanged: (v) => setDlgState(() => boolVal = v),
+                    ),
+                  ] else ...[
+                    CustomTextField(
+                      controller: valCtrl,
+                      label: 'Value',
+                      hintText: selectedType == CustomFieldType.date
+                          ? 'YYYY-MM-DD'
+                          : selectedType == CustomFieldType.email
+                              ? 'name@example.com'
+                              : 'Field value',
+                      isPassword: selectedType == CustomFieldType.secret || selectedType == CustomFieldType.password,
+                      maxLines: selectedType == CustomFieldType.multiline ? 4 : 1,
+                      keyboardType: selectedType == CustomFieldType.number
+                          ? TextInputType.number
+                          : selectedType == CustomFieldType.email
+                              ? TextInputType.emailAddress
+                              : selectedType == CustomFieldType.url
+                                  ? TextInputType.url
+                                  : TextInputType.text,
+                    ),
+                  ],
+                ],
+              ),
             ),
             actions: [
               TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
               FilledButton(
                 onPressed: () {
-                  if (labelCtrl.text.trim().isNotEmpty) {
+                  final label = labelCtrl.text.trim();
+                  if (label.isNotEmpty) {
+                    final val = selectedType == CustomFieldType.boolean ? boolVal.toString() : valCtrl.text.trim();
                     setState(() {
                       _customFields.add(CustomField(
-                        label: labelCtrl.text.trim(),
-                        value: valCtrl.text.trim(),
-                        isConcealed: isConcealed,
+                        label: label,
+                        value: val,
+                        type: selectedType,
                       ));
                     });
                   }
                   Navigator.of(ctx).pop();
                 },
-                child: const Text('Add'),
+                child: const Text('Add Field'),
               ),
             ],
           ),
@@ -389,6 +463,28 @@ class _ItemEditorScreenState extends State<ItemEditorScreen> {
         ];
       }
 
+      // Passkey payload creation if applicable
+      PasskeyCredential? passkeyData;
+      if (_itemType == VaultItemType.passkey || _rpIdController.text.trim().isNotEmpty) {
+        final rpId = _rpIdController.text.trim().isEmpty ? (_websiteController.text.trim()) : _rpIdController.text.trim();
+        final rpName = _rpNameController.text.trim().isEmpty ? _titleController.text.trim() : _rpNameController.text.trim();
+        final uName = _usernameController.text.trim().isNotEmpty ? _usernameController.text.trim() : 'User';
+        final credId = _passkeyCredentialIdController.text.trim().isNotEmpty ? _passkeyCredentialIdController.text.trim() : (existing?.passkey?.credentialId ?? 'CRED_${DateTime.now().millisecondsSinceEpoch}');
+
+        passkeyData = PasskeyCredential(
+          id: existing?.passkey?.id,
+          rpId: rpId,
+          rpName: rpName,
+          userName: uName,
+          userHandle: _passkeyUserHandleController.text.trim().isEmpty ? null : _passkeyUserHandleController.text.trim(),
+          credentialId: credId,
+          algorithm: _passkeyAlg,
+          authenticatorAttachment: _passkeyAttachment,
+          createdAt: existing?.passkey?.createdAt,
+          lastUsedAt: existing?.passkey?.lastUsedAt,
+        );
+      }
+
       final updatedItem = VaultItem(
         id: existing?.id,
         type: _itemType,
@@ -403,6 +499,7 @@ class _ItemEditorScreenState extends State<ItemEditorScreen> {
         totpSecret: _totpSecretController.text.trim().isEmpty ? null : _totpSecretController.text.trim(),
         passwordUpdatedAt: passwordUpdatedAt,
         passwordHistory: history,
+        passkey: passkeyData,
         cardholderName: _cardholderController.text.trim().isEmpty ? null : _cardholderController.text.trim(),
         cardNumber: _cardNumberController.text.trim().isEmpty ? null : _cardNumberController.text.trim(),
         expiryMonth: _expiryMonthController.text.trim().isEmpty ? null : _expiryMonthController.text.trim(),
@@ -493,7 +590,7 @@ class _ItemEditorScreenState extends State<ItemEditorScreen> {
               CustomTextField(
                 controller: _titleController,
                 label: 'Title',
-                hintText: 'e.g. GitHub, Netflix, Chase Card',
+                hintText: 'e.g. GitHub, Google Account, Chase Card',
                 autofocus: !isEditing,
                 validator: (val) {
                   if (val == null || val.trim().isEmpty) {
@@ -503,6 +600,69 @@ class _ItemEditorScreenState extends State<ItemEditorScreen> {
                 },
               ),
               const SizedBox(height: 14),
+
+              // Passkey Credential Specific Fields
+              if (_itemType == VaultItemType.passkey) ...[
+                CustomTextField(
+                  controller: _rpNameController,
+                  label: 'Relying Party / Service Name',
+                  hintText: 'e.g. GitHub, Google, Apple',
+                  prefixIcon: const Icon(Icons.security_outlined, size: 20, color: Colors.deepPurpleAccent),
+                ),
+                const SizedBox(height: 14),
+                CustomTextField(
+                  controller: _rpIdController,
+                  label: 'Relying Party Domain (RP ID)',
+                  hintText: 'e.g. github.com, google.com',
+                  prefixIcon: const Icon(Icons.language_outlined, size: 20),
+                ),
+                const SizedBox(height: 14),
+                CustomTextField(
+                  controller: _usernameController,
+                  label: 'User Handle / Account Identifier',
+                  hintText: 'user@example.com',
+                  prefixIcon: const Icon(Icons.person_outline, size: 20),
+                ),
+                const SizedBox(height: 14),
+                CustomTextField(
+                  controller: _passkeyCredentialIdController,
+                  label: 'Credential Identifier (Base64 / Hex)',
+                  hintText: 'Auto-generated or imported FIDO2 credential ID',
+                  isMonospace: true,
+                  prefixIcon: const Icon(Icons.fingerprint_rounded, size: 20),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<PasskeyAlgorithm>(
+                        initialValue: _passkeyAlg,
+                        decoration: const InputDecoration(labelText: 'Algorithm'),
+                        items: PasskeyAlgorithm.values.map((a) {
+                          return DropdownMenuItem(value: a, child: Text(a.label));
+                        }).toList(),
+                        onChanged: (v) {
+                          if (v != null) setState(() => _passkeyAlg = v);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: DropdownButtonFormField<AuthenticatorAttachment>(
+                        initialValue: _passkeyAttachment,
+                        decoration: const InputDecoration(labelText: 'Authenticator'),
+                        items: AuthenticatorAttachment.values.map((a) {
+                          return DropdownMenuItem(value: a, child: Text(a.label));
+                        }).toList(),
+                        onChanged: (v) {
+                          if (v != null) setState(() => _passkeyAttachment = v);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+              ],
 
               // Login / Password Fields
               if (_itemType == VaultItemType.login || _itemType == VaultItemType.password) ...[
@@ -761,7 +921,7 @@ class _ItemEditorScreenState extends State<ItemEditorScreen> {
                 const SizedBox(height: 14),
               ],
 
-              // Encrypted File Attachments Section (Any item can also have attachments)
+              // Encrypted File Attachments Section
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -874,11 +1034,11 @@ class _ItemEditorScreenState extends State<ItemEditorScreen> {
               ),
               const SizedBox(height: 20),
 
-              // Custom Fields Section
+              // Custom Fields 2.0 Section
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Custom Fields', style: AppTypography.titleSmall),
+                  Text('Custom Fields 2.0', style: AppTypography.titleSmall),
                   TextButton.icon(
                     onPressed: _addCustomField,
                     icon: const Icon(Icons.add, size: 18),
@@ -897,15 +1057,30 @@ class _ItemEditorScreenState extends State<ItemEditorScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       child: Row(
                         children: [
+                          Text(field.type.icon, style: const TextStyle(fontSize: 16)),
+                          const SizedBox(width: 10),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  field.label,
-                                  style: AppTypography.caption.copyWith(
-                                    color: theme.colorScheme.onSurface.withAlpha(150),
-                                  ),
+                                Row(
+                                  children: [
+                                    Text(
+                                      field.label,
+                                      style: AppTypography.caption.copyWith(
+                                        color: theme.colorScheme.onSurface.withAlpha(150),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      '• ${field.type.label}',
+                                      style: AppTypography.caption.copyWith(
+                                        color: theme.colorScheme.primary,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                                 const SizedBox(height: 2),
                                 Text(

@@ -24,6 +24,9 @@ class VaultItemTile extends StatelessWidget {
     switch (item.type) {
       case VaultItemType.login:
         return item.username ?? item.website ?? 'No username';
+      case VaultItemType.passkey:
+        final pk = item.passkey;
+        return pk != null ? '${pk.rpName} • ${pk.userName}' : (item.website ?? 'Passkey');
       case VaultItemType.password:
         return '••••••••••••';
       case VaultItemType.card:
@@ -57,6 +60,8 @@ class VaultItemTile extends StatelessWidget {
     switch (item.type) {
       case VaultItemType.login:
         return AppColors.categoryLogin.withAlpha(30);
+      case VaultItemType.passkey:
+        return Colors.deepPurpleAccent.withAlpha(30);
       case VaultItemType.password:
         return AppColors.categoryPassword.withAlpha(30);
       case VaultItemType.card:
@@ -119,6 +124,24 @@ class VaultItemTile extends StatelessWidget {
                           ),
                         ),
                       ),
+                      if (item.hasPasskey && item.type != VaultItemType.passkey) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.deepPurpleAccent.withAlpha(30),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            'Passkey',
+                            style: AppTypography.caption.copyWith(
+                              color: Colors.deepPurpleAccent,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
                       if (item.folder != null && item.folder!.isNotEmpty) ...[
                         const SizedBox(width: 6),
                         Container(

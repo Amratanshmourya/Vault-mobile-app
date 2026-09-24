@@ -51,14 +51,52 @@ class StorageService {
   }
 
   // Encrypted Vault Payload
-  Future<String?> getEncryptedVaultData() async {
+  Future<String?> getEncryptedVaultData([String? vaultId]) async {
     final prefs = await _getPrefs();
-    return prefs.getString(AppConstants.keyVaultDataEncrypted);
+    if (vaultId == null || vaultId == 'default_vault') {
+      return prefs.getString(AppConstants.keyVaultDataEncrypted);
+    }
+    return prefs.getString('${AppConstants.keyVaultDataEncrypted}_$vaultId');
   }
 
-  Future<void> saveEncryptedVaultData(String encryptedPayloadJson) async {
+  Future<void> saveEncryptedVaultData(String encryptedPayloadJson, [String? vaultId]) async {
     final prefs = await _getPrefs();
-    await prefs.setString(AppConstants.keyVaultDataEncrypted, encryptedPayloadJson);
+    if (vaultId == null || vaultId == 'default_vault') {
+      await prefs.setString(AppConstants.keyVaultDataEncrypted, encryptedPayloadJson);
+    } else {
+      await prefs.setString('${AppConstants.keyVaultDataEncrypted}_$vaultId', encryptedPayloadJson);
+    }
+  }
+
+  Future<void> deleteVaultData(String vaultId) async {
+    final prefs = await _getPrefs();
+    if (vaultId == 'default_vault') {
+      await prefs.remove(AppConstants.keyVaultDataEncrypted);
+    } else {
+      await prefs.remove('${AppConstants.keyVaultDataEncrypted}_$vaultId');
+    }
+  }
+
+  // Vault Descriptors Registry
+  Future<String?> getVaultDescriptorsJson() async {
+    final prefs = await _getPrefs();
+    return prefs.getString(AppConstants.keyVaultDescriptors);
+  }
+
+  Future<void> saveVaultDescriptorsJson(String jsonStr) async {
+    final prefs = await _getPrefs();
+    await prefs.setString(AppConstants.keyVaultDescriptors, jsonStr);
+  }
+
+  // Active Vault ID
+  Future<String> getActiveVaultId() async {
+    final prefs = await _getPrefs();
+    return prefs.getString(AppConstants.keyActiveVaultId) ?? 'default_vault';
+  }
+
+  Future<void> setActiveVaultId(String vaultId) async {
+    final prefs = await _getPrefs();
+    await prefs.setString(AppConstants.keyActiveVaultId, vaultId);
   }
 
   // User Profile

@@ -194,6 +194,118 @@ class ItemDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
 
+            // Passkey Credential Showcase Section
+            if (item.hasPasskey) ...[
+              VaultCard(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.deepPurpleAccent.withAlpha(30),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.shield_outlined, color: Colors.deepPurpleAccent, size: 22),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    item.passkey?.rpName ?? item.title,
+                                    style: AppTypography.titleMedium.copyWith(fontWeight: FontWeight.bold),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.success.withAlpha(25),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      'WebAuthn / FIDO2',
+                                      style: AppTypography.caption.copyWith(
+                                        color: AppColors.success,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'RP: ${item.passkey?.rpId ?? (item.normalizedDomain ?? "Unknown")}',
+                                style: AppTypography.bodySmall.copyWith(
+                                  color: theme.colorScheme.onSurface.withAlpha(150),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 24),
+                    if (item.passkey?.userName != null && item.passkey!.userName.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Account:', style: AppTypography.caption.copyWith(color: theme.colorScheme.onSurface.withAlpha(140))),
+                            Text(item.passkey!.userName, style: AppTypography.bodyMedium.copyWith(fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                    if (item.passkey?.credentialId != null && item.passkey!.credentialId.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          children: [
+                            Text('Credential ID: ', style: AppTypography.caption.copyWith(color: theme.colorScheme.onSurface.withAlpha(140))),
+                            Expanded(
+                              child: Text(
+                                item.passkey!.credentialId,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTypography.monospace.copyWith(fontSize: 12),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.copy_rounded, size: 16),
+                              tooltip: 'Copy Credential ID',
+                              onPressed: () => _copy(context, item.passkey!.credentialId, 'Credential ID'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        Chip(
+                          label: Text(item.passkey?.algorithm.label ?? 'ES256'),
+                          backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                        ),
+                        Chip(
+                          label: Text(item.passkey?.authenticatorAttachment.label ?? 'Platform Authenticator'),
+                          backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
             // Login specific fields
             if (item.username != null && item.username!.isNotEmpty)
               SensitiveFieldTile(
@@ -479,11 +591,11 @@ class ItemDetailScreen extends StatelessWidget {
               ),
             ],
 
-            // Custom fields
+            // Custom fields 2.0
             if (item.customFields.isNotEmpty) ...[
               const SizedBox(height: 12),
               ...item.customFields.map((cf) => SensitiveFieldTile(
-                    label: cf.label.toUpperCase(),
+                    label: '${cf.label.toUpperCase()} (${cf.type.label.toUpperCase()})',
                     value: cf.value,
                     isSensitive: cf.isConcealed,
                     onCopy: () => _copy(context, cf.value, cf.label),

@@ -19,6 +19,13 @@ class EncryptedFileService {
     return dir;
   }
 
+  Future<Directory> getEncryptedFilesDirectory() => _getEncryptedFilesDir();
+
+  Future<File> getEncryptedFile(String id) async {
+    final dir = await _getEncryptedFilesDir();
+    return File('${dir.path}/$id.enc');
+  }
+
   /// Encrypts a local file from disk or in-memory bytes and stores the encrypted payload in app storage
   Future<EncryptedFileAttachment> encryptAndSaveFile({
     File? sourceFile,
